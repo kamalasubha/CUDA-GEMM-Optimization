@@ -47,6 +47,19 @@ $ ./build/src/profile_cuda_gemm_fp32
 $ ./build/src/profile_cuda_gemm_fp16
 ```
 
+### Build and Run on AMD GPUs (ROCm)
+
+The kernels can also be built with HIP for AMD GPUs. This requires ROCm with hipBLAS and rocWMMA installed. The CUDA source files are compiled as HIP, and the headers in `hip_compat` map the CUDA runtime, cuBLAS, and WMMA APIs to HIP, hipBLAS, and rocWMMA. Set `CMAKE_HIP_ARCHITECTURES` to the target GPU architecture, for example `gfx90a`, `gfx942`, or `gfx1100`, or omit it to build for the GPUs detected on the host.
+
+```bash
+$ cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=/opt/rocm
+$ cmake --build build --parallel
+$ ./build/src/profile_cuda_gemm_fp32
+$ ./build/src/profile_cuda_gemm_fp16
+```
+
+If ROCm is installed somewhere else, or `/opt/rocm/bin` is already on `PATH`, adjust or drop `CMAKE_PREFIX_PATH` accordingly.
+
 ## Performances
 
 All the experiments are conducted on a single NVIDIA [GeForce RTX 3090 GPU](https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.1.pdf). The performance can vary, sometimes up to 25%, from one measurement to another.

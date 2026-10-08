@@ -15,7 +15,14 @@ int main()
     double const fp16_rel_tol{1.0e-1f};
 
     __half const fp16_tensor_core_abs_tol{__float2half(5.0e-2f)};
+#if defined(__HIP_PLATFORM_AMD__)
+    // hipBLAS and the WMMA kernels both accumulate in FP16, but in a different
+    // order. For K = 4096 their results differ by up to about 2.2% while both
+    // stay equally close to the exact result.
+    double const fp16_tensor_core_rel_tol{5.0e-2f};
+#else
     double const fp16_tensor_core_rel_tol{1.0e-2f};
+#endif
 
     constexpr size_t m{4096U};
     constexpr size_t k{4096U};

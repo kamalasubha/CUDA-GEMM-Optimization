@@ -16,7 +16,8 @@ template <typename T, size_t BLOCK_TILE_SIZE_X, size_t BLOCK_TILE_SIZE_Y,
           size_t BLOCK_TILE_SIZE_K, size_t BLOCK_TILE_SKEW_SIZE_X,
           size_t BLOCK_TILE_SKEW_SIZE_Y, size_t WARP_TILE_SIZE_X,
           size_t WARP_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_X,
-          size_t WMMA_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_K, size_t NUM_THREADS>
+          size_t WMMA_TILE_SIZE_Y, size_t WMMA_TILE_SIZE_K, size_t NUM_THREADS,
+          size_t NUM_THREADS_PER_WARP>
 __global__ void gemm_v07_vectorized(size_t m, size_t n, size_t k, T alpha,
                                     T const* A, size_t lda, T const* B,
                                     size_t ldb, T beta, T* C, size_t ldc)
@@ -70,7 +71,7 @@ __global__ void gemm_v07_vectorized(size_t m, size_t n, size_t k, T alpha,
     }
 
     size_t const thread_linear_idx{threadIdx.y * blockDim.x + threadIdx.x};
-    size_t const warp_linear_idx{thread_linear_idx / 32U};
+    size_t const warp_linear_idx{thread_linear_idx / NUM_THREADS_PER_WARP};
     size_t const warp_row_idx{warp_linear_idx / NUM_WARPS_X};
     size_t const warp_col_idx{warp_linear_idx % NUM_WARPS_X};
 
@@ -192,11 +193,12 @@ __global__ void gemm_v07_vectorized(size_t m, size_t n, size_t k, T alpha,
     }
 }
 
-template <typename T>
-void launch_gemm_kernel_v07_vectorized(size_t m, size_t n, size_t k,
-                                       T const* alpha, T const* A, size_t lda,
-                                       T const* B, size_t ldb, T const* beta,
-                                       T* C, size_t ldc, cudaStream_t stream)
+template <typename T, unsigned int NUM_THREADS_PER_WARP>
+void launch_gemm_kernel_v07_vectorized_impl(size_t m, size_t n, size_t k,
+                                            T const* alpha, T const* A,
+                                            size_t lda, T const* B, size_t ldb,
+                                            T const* beta, T* C, size_t ldc,
+                                            cudaStream_t stream)
 {
     // Feel free to play with the block tile sizes.
     // The algorithm correctness should always be guaranteed.
@@ -220,7 +222,7 @@ void launch_gemm_kernel_v07_vectorized(size_t m, size_t n, size_t k,
     constexpr unsigned int WMMA_TILE_SIZE_K{16U};
 
     constexpr unsigned int NUM_THREADS_PER_BLOCK{NUM_WARPS_X * NUM_WARPS_Y *
-                                                 32U};
+                                                 NUM_THREADS_PER_WARP};
 
     dim3 const block_dim{NUM_THREADS_PER_BLOCK, 1U, 1U};
     dim3 const grid_dim{
@@ -229,14 +231,40 @@ void launch_gemm_kernel_v07_vectorized(size_t m, size_t n, size_t k,
         (static_cast<unsigned int>(m) + BLOCK_TILE_SIZE_Y - 1U) /
             BLOCK_TILE_SIZE_Y,
         1U};
-    gemm_v07_vectorized<T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y,
-                        BLOCK_TILE_SIZE_K, BLOCK_TILE_SKEW_SIZE_X,
-                        BLOCK_TILE_SKEW_SIZE_Y, WARP_TILE_SIZE_X,
-                        WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_Y,
-                        WMMA_TILE_SIZE_K, NUM_THREADS_PER_BLOCK>
+    gemm_v07_vectorized<
+        T, BLOCK_TILE_SIZE_X, BLOCK_TILE_SIZE_Y, BLOCK_TILE_SIZE_K,
+        BLOCK_TILE_SKEW_SIZE_X, BLOCK_TILE_SKEW_SIZE_Y, WARP_TILE_SIZE_X,
+        WARP_TILE_SIZE_Y, WMMA_TILE_SIZE_X, WMMA_TILE_SIZE_Y, WMMA_TILE_SIZE_K,
+        NUM_THREADS_PER_BLOCK, NUM_THREADS_PER_WARP>
         <<<grid_dim, block_dim, 0U, stream>>>(m, n, k, *alpha, A, lda, B, ldb,
                                               *beta, C, ldc);
     CHECK_LAST_CUDA_ERROR();
+}
+
+template <typename T>
+void launch_gemm_kernel_v07_vectorized(size_t m, size_t n, size_t k,
+                                       T const* alpha, T const* A, size_t lda,
+                                       T const* B, size_t ldb, T const* beta,
+                                       T* C, size_t ldc, cudaStream_t stream)
+{
+    // The WMMA operations are collective over a hardware warp, so the number
+    // of threads per warp must match the device. It is 32 on NVIDIA GPUs and
+    // either 32 or 64 on AMD GPUs.
+    int device_id{0};
+    int warp_size{0};
+    CHECK_CUDA_ERROR(cudaGetDevice(&device_id));
+    CHECK_CUDA_ERROR(
+        cudaDeviceGetAttribute(&warp_size, cudaDevAttrWarpSize, device_id));
+    if (warp_size == 64)
+    {
+        launch_gemm_kernel_v07_vectorized_impl<T, 64U>(
+            m, n, k, alpha, A, lda, B, ldb, beta, C, ldc, stream);
+    }
+    else
+    {
+        launch_gemm_kernel_v07_vectorized_impl<T, 32U>(
+            m, n, k, alpha, A, lda, B, ldb, beta, C, ldc, stream);
+    }
 }
 
 // Explicit instantiation.
