@@ -264,16 +264,16 @@ __global__ void gemm_v06_vectorized(size_t m, size_t n, size_t k, T alpha,
         {
             // Load data from shared memory to register file for A.
             load_data_from_shared_memory_to_register_file_vectorized<
-                T, BLOCK_TILE_SIZE_Y, WARP_TILE_SIZE_Y, NUM_THREADS_PER_WARP_Y,
-                THREAD_TILE_SIZE_Y>(A_thread_block_tile_transposed[k_i], A_vals,
-                                    warp_row_idx,
-                                    thread_linear_row_idx_in_warp);
+                T, BLOCK_TILE_SIZE_Y, WARP_TILE_SIZE_Y,
+                NUM_THREAD_TILES_PER_WARP_Y, THREAD_TILE_SIZE_Y>(
+                A_thread_block_tile_transposed[k_i], A_vals, warp_row_idx,
+                thread_linear_row_idx_in_warp);
             // Load data from shared memory to register file for B.
             load_data_from_shared_memory_to_register_file_vectorized<
-                T, BLOCK_TILE_SIZE_X, WARP_TILE_SIZE_X, NUM_THREADS_PER_WARP_X,
-                THREAD_TILE_SIZE_X>(B_thread_block_tile[k_i], B_vals,
-                                    warp_col_idx,
-                                    thread_linear_col_idx_in_warp);
+                T, BLOCK_TILE_SIZE_X, WARP_TILE_SIZE_X,
+                NUM_THREAD_TILES_PER_WARP_X, THREAD_TILE_SIZE_X>(
+                B_thread_block_tile[k_i], B_vals, warp_col_idx,
+                thread_linear_col_idx_in_warp);
 
             // Compute NUM_THREAD_TILES_PER_WARP_Y * NUM_THREAD_TILES_PER_WARP_X
             // outer products.
